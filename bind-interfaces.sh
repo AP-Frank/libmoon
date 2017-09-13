@@ -34,6 +34,9 @@ cd deps/dpdk
 modprobe uio
 (lsmod | grep igb_uio > /dev/null) || insmod ./x86_64-native-linuxapp-gcc/kmod/igb_uio.ko
 
+# Clear the previous whitelist
+sed -i "s/[-]*pciWhitelist = {.*}/pciWhitelist = {}/" ./../../dpdk-conf.lua
+
 i=0
 for id in $(usertools/dpdk-devbind.py --status | grep -v Active | grep -v ConnectX | grep unused=igb_uio | cut -f 1 -d " ")
 do
@@ -53,6 +56,8 @@ if $MLX5 ; then
 	do
 		echo "Binding interface $id to DPDK (kernel module mlx5_core)"
 		usertools/dpdk-devbind.py  --bind=mlx5_core $id
+		# Whitelist mlx5 based device and set runtime args
+		sed -i "s/\(pciWhitelist = {\)\(.*}\)/\1\"$id,rx_vec_en=0\",\2/" ./../../dpdk-conf.lua
 		i=$(($i+1))
 	done
 fi
@@ -66,7 +71,18 @@ if $MLX4 ; then
 	do
 		echo "Binding interface $id to DPDK (kernel module mlx4_core)"
 		usertools/dpdk-devbind.py  --bind=mlx4_core $id
+		# Whitelist mlx4 based devices
+		sed -i "s/\(pciWhitelist = {\)\(.*}\)/\1\"$id\",\2/" ./../../dpdk-conf.lua
 		i=$(($i+1))
+	done
+fi
+
+# If we use mlx5 based devices we need whitelisting
+if $MLX5 ; then
+	# Whitelist all devices using an apropriate UIO module as driver
+	for id in $(usertools/dpdk-devbind.py --status | grep -v ConnectX | grep 'drv=\(igb_uio\|uio_pci_generic\|vfio-pci\)' | cut -f 1 -d " ")
+	do
+		sed -i "s/\(pciWhitelist = {\)\(.*}\)/\1\"$id\",\2/" ./../../dpdk-conf.lua
 	done
 fi
 
